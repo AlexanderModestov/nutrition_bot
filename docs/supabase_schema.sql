@@ -38,6 +38,40 @@ CREATE TABLE notification_settings (
 CREATE INDEX idx_users_telegram_id ON users(telegram_id);
 CREATE INDEX idx_notification_settings_user_id ON notification_settings(user_id);
 
+-- Enable Row Level Security
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_settings ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for users table
+CREATE POLICY "Allow anonymous user creation" ON users
+    FOR INSERT 
+    WITH CHECK (true);
+
+CREATE POLICY "Users can read own data" ON users
+    FOR SELECT 
+    USING (true);
+
+CREATE POLICY "Users can update own data" ON users
+    FOR UPDATE 
+    USING (true)
+    WITH CHECK (true);
+
+-- RLS Policies for user_messages table
+CREATE POLICY "Users can insert own messages" ON user_messages
+    FOR INSERT 
+    WITH CHECK (true);
+
+CREATE POLICY "Users can read own messages" ON user_messages
+    FOR SELECT 
+    USING (true);
+
+-- RLS Policies for notification_settings table
+CREATE POLICY "Users can manage own notification settings" ON notification_settings
+    FOR ALL 
+    USING (true)
+    WITH CHECK (true);
+
 -- Function to search documents by similarity
 CREATE OR REPLACE FUNCTION search_documents(
     query_embedding vector(1536),
