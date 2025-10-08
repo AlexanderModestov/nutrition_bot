@@ -1,6 +1,6 @@
 # Python
 __pycache__/
-data/
+data
 .env
 .venv
 **/__pycache__/
