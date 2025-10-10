@@ -21,7 +21,7 @@ class Config:
 
     # Channel subscription settings
     CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', 'odnimsalatom')
-    VITAMIN_BOOK_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'pdf', 'Витамины БАДы _ Шаркова Диетолог.pdf')
+    VITAMIN_BOOK_PATH = os.path.join(os.path.dirname(__file__), '..', 'Витаминный_состав_для_ежедневного_питания_Шаркова_Диетолог_pdf.pdf')
 
     # RAG Pipeline Prompt Template
 #    RAG_PROMPT_TEMPLATE = """
