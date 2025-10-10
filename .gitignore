@@ -1,6 +1,8 @@
 # Python
 __pycache__/
-data
+data/*
+!data/pdf/
+!data/pdf/*.pdf
 .env
 .venv
 **/__pycache__/
