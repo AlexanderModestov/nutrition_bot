@@ -9,6 +9,7 @@ class User(BaseModel):
     isAudio: Optional[bool] = False
     notification: Optional[bool] = False
     timezone: Optional[str] = "UTC"  # User's timezone (e.g., "Europe/Berlin", "UTC")
+    book_received: Optional[bool] = False  # Track if user received the vitamin book
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

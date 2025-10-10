@@ -19,6 +19,10 @@ class Config:
     RATE_LIMIT_REQUESTS_PER_DAY = int(os.getenv('RATE_LIMIT_REQUESTS_PER_DAY', '50'))
     WEBAPP_URL = os.getenv('WEBAPP_URL', 'https://your-webapp-domain.com')
 
+    # Channel subscription settings
+    CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', 'odnimsalatom')
+    VITAMIN_BOOK_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'pdf', 'Витамины БАДы _ Шаркова Диетолог.pdf')
+
     # RAG Pipeline Prompt Template
 #    RAG_PROMPT_TEMPLATE = """
 #You are a system that reproduces the communicative style of a psychologist from broadcasts using ONLY the provided context. Language: Russian.

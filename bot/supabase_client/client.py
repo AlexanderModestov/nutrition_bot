@@ -324,11 +324,24 @@ class SupabaseClient:
         """Get all users who have notifications enabled"""
         try:
             response = self.supabase.table('users').select('*').eq('notification', True).execute()
-            
+
             if response.data:
                 return [User(**user_data) for user_data in response.data]
             return []
-            
+
         except Exception as e:
             pass  # Get all notification users error suppressed for performance
             return []
+
+    async def mark_book_received(self, telegram_id: int) -> bool:
+        """Mark that user has received the vitamin book"""
+        try:
+            user_data = {
+                'telegram_id': telegram_id,
+                'book_received': True
+            }
+            result = await self.create_or_update_user(user_data)
+            return result is not None
+        except Exception as e:
+            pass  # Book received update error suppressed
+            return False

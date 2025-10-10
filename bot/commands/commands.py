@@ -38,7 +38,7 @@ async def cmd_start(message: types.Message, supabase_client):
     """Start command handler"""
     user_name = message.from_user.first_name
     await message.answer(Messages.START_CMD["welcome"](user_name))
-    
+
     try:
         # Register user in Supabase
         await supabase_client.create_user(
@@ -49,6 +49,20 @@ async def cmd_start(message: types.Message, supabase_client):
         )
     except Exception as e:
         logging.warning(f"User registration error: {e}")
+
+    # Send vitamin book promotional message with subscription button
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=Messages.START_CMD["check_subscription_button"],
+            callback_data="check_channel_subscription"
+        )]
+    ])
+
+    await message.answer(
+        Messages.START_CMD["vitamin_book_promo"](),
+        reply_markup=keyboard,
+        disable_web_page_preview=True
+    )
 
 
 @content_router.message(Command('resources'))
