@@ -6,6 +6,19 @@ load_dotenv()
 class Config:
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
     TELEGRAM_ADMIN_ID = int(os.getenv('TELEGRAM_ADMIN_ID', '0'))
+
+    # Support for multiple admin IDs (comma-separated in .env)
+    @classmethod
+    def get_admin_ids(cls) -> list:
+        """Get list of admin IDs from environment variable"""
+        admin_ids_str = os.getenv('TELEGRAM_ADMIN_IDS', '')
+        if admin_ids_str:
+            # Parse comma-separated list
+            return [int(id.strip()) for id in admin_ids_str.split(',') if id.strip().isdigit()]
+        # Fallback to single TELEGRAM_ADMIN_ID if TELEGRAM_ADMIN_IDS not set
+        if cls.TELEGRAM_ADMIN_ID and cls.TELEGRAM_ADMIN_ID != 0:
+            return [cls.TELEGRAM_ADMIN_ID]
+        return []
     
     SUPABASE_URL = os.getenv('SUPABASE_URL')
     SUPABASE_KEY = os.getenv('SUPABASE_KEY')
@@ -22,6 +35,9 @@ class Config:
     # Channel subscription settings
     CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', 'odnimsalatom')
     VITAMIN_BOOK_PATH = os.path.join(os.path.dirname(__file__), '..', 'Витаминный_состав_для_ежедневного_питания_Шаркова_Диетолог_pdf.pdf')
+
+    # Booking settings
+    BOOKING_LINK = os.getenv('booking_link', 'https://qlick.io/widget/alexander-97/meeting-60m/start')
 
     # RAG Pipeline Prompt Template
 #    RAG_PROMPT_TEMPLATE = """

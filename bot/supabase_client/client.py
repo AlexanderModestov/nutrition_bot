@@ -345,3 +345,56 @@ class SupabaseClient:
         except Exception as e:
             pass  # Book received update error suppressed
             return False
+
+    async def get_weekly_statistics(self) -> Dict[str, Any]:
+        """Get user activity statistics for the previous week"""
+        try:
+            from datetime import datetime, timedelta
+
+            # Calculate date range for previous week
+            today = datetime.now()
+            week_ago = today - timedelta(days=7)
+
+            # Format dates for PostgreSQL
+            week_ago_str = week_ago.strftime('%Y-%m-%d %H:%M:%S')
+            today_str = today.strftime('%Y-%m-%d %H:%M:%S')
+
+            # Get all users
+            all_users_response = self.client.table('users').select('id, telegram_id, username, created_at, updated_at').execute()
+
+            total_users = len(all_users_response.data) if all_users_response.data else 0
+
+            # Get users who were active (updated) in the last week
+            active_users_response = self.client.table('users').select('id, telegram_id, username, updated_at').gte('updated_at', week_ago_str).lte('updated_at', today_str).execute()
+
+            active_users_count = len(active_users_response.data) if active_users_response.data else 0
+
+            # Get new users created in the last week
+            new_users_response = self.client.table('users').select('id, telegram_id, username, created_at').gte('created_at', week_ago_str).lte('created_at', today_str).execute()
+
+            new_users_count = len(new_users_response.data) if new_users_response.data else 0
+
+            # Get users with notifications enabled
+            notification_users_response = self.client.table('users').select('id').eq('notification', True).execute()
+
+            notification_users_count = len(notification_users_response.data) if notification_users_response.data else 0
+
+            return {
+                'total_users': total_users,
+                'active_last_week': active_users_count,
+                'new_last_week': new_users_count,
+                'notification_enabled': notification_users_count,
+                'week_start': week_ago_str,
+                'week_end': today_str
+            }
+
+        except Exception as e:
+            import logging
+            logging.error(f"Error getting weekly statistics: {e}")
+            return {
+                'error': str(e),
+                'total_users': 0,
+                'active_last_week': 0,
+                'new_last_week': 0,
+                'notification_enabled': 0
+            }

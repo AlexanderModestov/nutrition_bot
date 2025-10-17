@@ -64,7 +64,6 @@ async def cmd_start(message: types.Message, supabase_client):
         disable_web_page_preview=True
     )
 
-
 @content_router.message(Command('resources'))
 async def list_resources(message: types.Message):
     """Open webapp with all resources and category buttons"""
@@ -90,117 +89,27 @@ async def list_resources(message: types.Message):
         logging.error(f"Error in list_resources: {e}")
         await message.answer("Ошибка при загрузке материалов.")
 
-@content_router.message(Command('quiz'))
-async def quiz_command(message: types.Message):
-    """Quiz command - show topic selection with pagination"""
-    try:
-        await show_quiz_topics(message, page=0)
-    except Exception as e:
-        logging.error(f"Error in quiz_command: {e}")
-        await message.answer("Ошибка при загрузке квиза.")
-
-async def show_quiz_topics(message: types.Message, page: int = 0, edit_message: bool = False):
-    """Show quiz topics with pagination"""
-    try:
-        # Load topics from video_descriptions.json
-        config_path = os.path.join(os.path.dirname(__file__), '..', 'configs', 'video_descriptions.json')
-        if not os.path.exists(config_path):
-            await message.answer("Ошибка: файл с темами не найден.")
-            return
-            
-        with open(config_path, 'r', encoding='utf-8') as f:
-            video_data = json.load(f)
-        
-        topics = video_data.get('videos', {})
-        if not topics:
-            await message.answer("Ошибка: темы не найдены.")
-            return
-        
-        # Exclude "Жить или выживать: разбор" from quiz list
-        filtered_topics = {k: v for k, v in topics.items() if v['name'] != "Жить или выживать: разбор"}
-        topic_items = list(filtered_topics.items())
-        topics_per_page = 5
-        total_pages = (len(topic_items) + topics_per_page - 1) // topics_per_page
-        
-        # Ensure page is within bounds
-        page = max(0, min(page, total_pages - 1))
-        
-        # Get topics for current page
-        start_idx = page * topics_per_page
-        end_idx = start_idx + topics_per_page
-        current_topics = topic_items[start_idx:end_idx]
-        
-        # Create inline buttons for topics (one per row)
-        buttons = []
-        for topic_key, topic_info in current_topics:
-            button = InlineKeyboardButton(
-                text=f"📝 {topic_info['name']}",
-                web_app=WebAppInfo(url=f"{Config.WEBAPP_URL}/api/quiz-html/{topic_info['file_id']}")
-            )
-            buttons.append([button])
-        
-        # Add navigation buttons if needed
-        nav_buttons = []
-        if page > 0:
-            nav_buttons.append(InlineKeyboardButton(
-                text="⬅️ Назад",
-                callback_data=f"quiz_page_{page-1}"
-            ))
-        
-        if page < total_pages - 1:
-            nav_buttons.append(InlineKeyboardButton(
-                text="Далее ➡️",
-                callback_data=f"quiz_page_{page+1}"
-            ))
-        
-        if nav_buttons:
-            buttons.append(nav_buttons)
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        
-        # Log quiz access
-        if not edit_message:
-            print(f"📝 Quiz command: User {message.from_user.id} ({message.from_user.username}) accessing quiz topics")
-            logging.info(f"Quiz command: User {message.from_user.id} accessing quiz topics")
-        
-        text = (
-            f"📝 *Выберите тему для квиза:*\n\n"
-            f"Пройдите тест по одной из психологических тем эфиров\n\n"
-            f"Страница {page + 1} из {total_pages}"
-        )
-        
-        if edit_message:
-            await message.edit_text(
-                text,
-                reply_markup=keyboard,
-                parse_mode="Markdown"
-            )
-        else:
-            await message.answer(
-                text,
-                reply_markup=keyboard,
-                parse_mode="Markdown"
-            )
-        
-    except Exception as e:
-        logging.error(f"Error in show_quiz_topics: {e}")
-        if edit_message:
-            await message.edit_text("Ошибка при загрузке квиза.")
-        else:
-            await message.answer("Ошибка при загрузке квиза.")
-
 @content_router.message(Command('booking'))
 async def schedule_command(message: types.Message):
     """Handle booking command"""
-    # Create available dates for next 7 days
-    dates = [(datetime.now() + timedelta(days=x)).strftime("%Y-%m-%d") for x in range(1, 8)]
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"📅 {date}", callback_data=f"date_{date}")] 
-        for date in dates
-    ])
-    
-    await message.answer("Выберите дату сессии:", reply_markup=keyboard)
+    try:
+        # Create button with booking webapp
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="📅 Записаться на консультацию",
+                web_app=WebAppInfo(url=Config.BOOKING_LINK)
+            )]
+        ])
+
+        await message.answer(
+            "📅 <b>Запись на консультацию</b>\n\n"
+            "Нажмите кнопку ниже, чтобы выбрать удобное время для консультации:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logging.error(f"Error in booking command: {e}")
+        await message.answer("Ошибка при загрузке формы записи.")
 
 @content_router.callback_query(lambda c: c.data.startswith('date_'))
 async def process_date_selection(callback_query: types.CallbackQuery):
@@ -981,7 +890,7 @@ async def notification_status_command(message: types.Message, supabase_client):
     try:
         scheduler = NotificationScheduler(message.bot, supabase_client)
         status = await scheduler.get_notification_status()
-        
+
         if 'error' in status:
             await message.answer(f"❌ Ошибка: {status['error']}")
         else:
@@ -994,10 +903,43 @@ async def notification_status_command(message: types.Message, supabase_client):
                 f"🔄 Планировщик работает: {'Да' if status['scheduler_running'] else 'Нет'}",
                 parse_mode="HTML"
             )
-            
+
     except Exception as e:
         logging.error(f"Error in notification status: {e}")
         await message.answer("❌ Произошла ошибка при получении статуса")
+
+@content_router.message(Command('statistics'))
+async def statistics_command(message: types.Message, supabase_client):
+    """Show bot usage statistics for the previous week - admin only"""
+    try:
+        # Check if user is admin
+        admin_ids = Config.get_admin_ids()
+        if message.from_user.id not in admin_ids:
+            await message.answer("⛔ У вас нет доступа к этой команде.")
+            return
+
+        # Get weekly statistics
+        stats = await supabase_client.get_weekly_statistics()
+
+        if 'error' in stats:
+            await message.answer(f"❌ Ошибка при получении статистики: {stats['error']}")
+            return
+
+        # Format statistics message
+        await message.answer(
+            f"📊 <b>Статистика бота за прошлую неделю</b>\n\n"
+            f"📅 Период: {stats.get('week_start', 'N/A')[:10]} - {stats.get('week_end', 'N/A')[:10]}\n\n"
+            f"👥 <b>Всего пользователей:</b> {stats['total_users']}\n"
+            f"✅ <b>Активных за неделю:</b> {stats['active_last_week']}\n"
+            f"🆕 <b>Новых за неделю:</b> {stats['new_last_week']}\n"
+            f"🔔 <b>С включенными уведомлениями:</b> {stats['notification_enabled']}\n\n"
+            f"📈 <b>Процент активности:</b> {(stats['active_last_week'] / stats['total_users'] * 100) if stats['total_users'] > 0 else 0:.1f}%",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logging.error(f"Error in statistics command: {e}")
+        await message.answer("❌ Произошла ошибка при получении статистики")
 
 # Location-based timezone handlers
 @content_router.message(lambda message: message.location is not None, NotificationStates.waiting_for_timezone_location)
