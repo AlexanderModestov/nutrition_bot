@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from bot.config import Config
 from bot.supabase_client import SupabaseClient
 import logging

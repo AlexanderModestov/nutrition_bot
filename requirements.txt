@@ -3,6 +3,7 @@ python-dotenv
 jinja2
 python-multipart
 langchain
+langchain-core
 langchain-openai
 langchain-community
 openai>=1.0.0
