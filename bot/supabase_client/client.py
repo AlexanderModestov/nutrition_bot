@@ -346,6 +346,20 @@ class SupabaseClient:
             pass  # Book received update error suppressed
             return False
 
+    async def get_all_users(self) -> List[User]:
+        """Get all users from database"""
+        try:
+            response = self.client.table('users').select('*').execute()
+
+            if response.data:
+                return [User(**user_data) for user_data in response.data]
+            return []
+
+        except Exception as e:
+            import logging
+            logging.error(f"Error getting all users: {e}")
+            return []
+
     async def get_weekly_statistics(self) -> Dict[str, Any]:
         """Get user activity statistics for the previous week"""
         try:

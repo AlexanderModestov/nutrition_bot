@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import asyncio
 from aiogram import Router, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, WebAppInfo
@@ -28,6 +29,13 @@ async def safe_callback_answer(callback_query: types.CallbackQuery, text: str = 
 class UserState(StatesGroup):
     help = State()
     waiting_for_question = State()
+
+class BroadcastState(StatesGroup):
+    waiting_for_message = State()
+
+class BroadcastTestState(StatesGroup):
+    waiting_for_test_user_id = State()
+    waiting_for_test_message = State()
 
 # Create routers for commands
 start_router = Router()
@@ -945,6 +953,310 @@ async def statistics_command(message: types.Message, supabase_client):
     except Exception as e:
         logging.error(f"Error in statistics command: {e}")
         await message.answer("❌ Произошла ошибка при получении статистики")
+
+@content_router.message(Command('broadcast'))
+async def broadcast_command(message: types.Message, state: FSMContext, supabase_client):
+    """Broadcast message to all users - admin only"""
+    try:
+        # Check if user is admin
+        admin_ids = Config.get_admin_ids()
+        if message.from_user.id not in admin_ids:
+            await message.answer("⛔ У вас нет доступа к этой команде.")
+            return
+
+        # Get total users count
+        all_users = await supabase_client.get_all_users()
+        total_users = len(all_users)
+
+        await message.answer(
+            f"📢 <b>Режим рассылки</b>\n\n"
+            f"👥 Всего пользователей: {total_users}\n\n"
+            f"Отправьте сообщение, которое хотите разослать всем пользователям.\n"
+            f"Поддерживаются: текст, фото, видео, аудио, документы, голосовые сообщения.\n\n"
+            f"Для отмены отправьте /cancel",
+            parse_mode="HTML"
+        )
+
+        # Set state to wait for broadcast message
+        await state.set_state(BroadcastState.waiting_for_message)
+
+    except Exception as e:
+        logging.error(f"Error in broadcast command: {e}")
+        await message.answer("❌ Произошла ошибка при запуске рассылки")
+
+@content_router.message(BroadcastState.waiting_for_message, Command('cancel'))
+async def cancel_broadcast(message: types.Message, state: FSMContext):
+    """Cancel broadcast"""
+    await state.clear()
+    await message.answer("❌ Рассылка отменена")
+
+@content_router.message(BroadcastState.waiting_for_message)
+async def handle_broadcast_message(message: types.Message, state: FSMContext, supabase_client):
+    """Handle broadcast message and send to all users"""
+    try:
+        # Get all users
+        all_users = await supabase_client.get_all_users()
+
+        if not all_users:
+            await message.answer("❌ Нет пользователей для рассылки")
+            await state.clear()
+            return
+
+        # Send confirmation
+        confirm_message = await message.answer(
+            f"📤 Начинаю рассылку сообщения {len(all_users)} пользователям...",
+            parse_mode="HTML"
+        )
+
+        # Broadcast statistics
+        success_count = 0
+        failed_count = 0
+        blocked_count = 0
+
+        # Send message to all users
+        for user in all_users:
+            try:
+                # Forward different message types
+                if message.text:
+                    await message.bot.send_message(
+                        chat_id=user.telegram_id,
+                        text=message.text,
+                        parse_mode=message.parse_mode if hasattr(message, 'parse_mode') else None
+                    )
+                elif message.photo:
+                    await message.bot.send_photo(
+                        chat_id=user.telegram_id,
+                        photo=message.photo[-1].file_id,
+                        caption=message.caption
+                    )
+                elif message.video:
+                    await message.bot.send_video(
+                        chat_id=user.telegram_id,
+                        video=message.video.file_id,
+                        caption=message.caption
+                    )
+                elif message.audio:
+                    await message.bot.send_audio(
+                        chat_id=user.telegram_id,
+                        audio=message.audio.file_id,
+                        caption=message.caption
+                    )
+                elif message.voice:
+                    await message.bot.send_voice(
+                        chat_id=user.telegram_id,
+                        voice=message.voice.file_id,
+                        caption=message.caption
+                    )
+                elif message.document:
+                    await message.bot.send_document(
+                        chat_id=user.telegram_id,
+                        document=message.document.file_id,
+                        caption=message.caption
+                    )
+                else:
+                    # Unsupported message type, skip
+                    failed_count += 1
+                    continue
+
+                success_count += 1
+
+                # Small delay to avoid rate limiting
+                await asyncio.sleep(0.05)
+
+            except Exception as e:
+                error_message = str(e)
+                if "blocked" in error_message.lower() or "chat not found" in error_message.lower():
+                    blocked_count += 1
+                else:
+                    failed_count += 1
+                logging.warning(f"Failed to send broadcast to user {user.telegram_id}: {e}")
+
+        # Send final statistics
+        await confirm_message.edit_text(
+            f"✅ <b>Рассылка завершена!</b>\n\n"
+            f"📊 Статистика:\n"
+            f"✅ Успешно отправлено: {success_count}\n"
+            f"🚫 Заблокировали бота: {blocked_count}\n"
+            f"❌ Ошибки: {failed_count}\n"
+            f"👥 Всего пользователей: {len(all_users)}",
+            parse_mode="HTML"
+        )
+
+        # Clear state
+        await state.clear()
+
+    except Exception as e:
+        logging.error(f"Error in broadcast handler: {e}")
+        await message.answer("❌ Произошла ошибка при рассылке")
+        await state.clear()
+
+@content_router.message(Command('broadcast_test'))
+async def broadcast_test_command(message: types.Message, state: FSMContext):
+    """Test broadcast message to specific user - admin only"""
+    try:
+        # Check if user is admin
+        admin_ids = Config.get_admin_ids()
+        if message.from_user.id not in admin_ids:
+            await message.answer("⛔ У вас нет доступа к этой команде.")
+            return
+
+        await message.answer(
+            f"🧪 <b>Тестовая рассылка</b>\n\n"
+            f"Отправьте Telegram ID пользователя, которому хотите отправить тестовое сообщение.\n\n"
+            f"Например: <code>123456789</code>\n\n"
+            f"Для отмены отправьте /cancel",
+            parse_mode="HTML"
+        )
+
+        # Set state to wait for test user ID
+        await state.set_state(BroadcastTestState.waiting_for_test_user_id)
+
+    except Exception as e:
+        logging.error(f"Error in broadcast_test command: {e}")
+        await message.answer("❌ Произошла ошибка при запуске тестовой рассылки")
+
+@content_router.message(BroadcastTestState.waiting_for_test_user_id, Command('cancel'))
+async def cancel_broadcast_test_user_id(message: types.Message, state: FSMContext):
+    """Cancel broadcast test at user ID stage"""
+    await state.clear()
+    await message.answer("❌ Тестовая рассылка отменена")
+
+@content_router.message(BroadcastTestState.waiting_for_test_user_id)
+async def handle_test_user_id(message: types.Message, state: FSMContext):
+    """Handle test user ID input"""
+    try:
+        # Validate that input is a number
+        try:
+            test_user_id = int(message.text.strip())
+        except ValueError:
+            await message.answer(
+                "❌ Неверный формат. Пожалуйста, отправьте числовой Telegram ID.\n"
+                "Например: <code>123456789</code>\n\n"
+                "Для отмены отправьте /cancel",
+                parse_mode="HTML"
+            )
+            return
+
+        # Save test user ID to state
+        await state.update_data(test_user_id=test_user_id)
+
+        await message.answer(
+            f"✅ Тестовый пользователь установлен: <code>{test_user_id}</code>\n\n"
+            f"Теперь отправьте сообщение для тестовой рассылки.\n"
+            f"Поддерживаются: текст, фото, видео, аудио, документы, голосовые сообщения.\n\n"
+            f"Для отмены отправьте /cancel",
+            parse_mode="HTML"
+        )
+
+        # Set state to wait for test message
+        await state.set_state(BroadcastTestState.waiting_for_test_message)
+
+    except Exception as e:
+        logging.error(f"Error handling test user ID: {e}")
+        await message.answer("❌ Произошла ошибка")
+        await state.clear()
+
+@content_router.message(BroadcastTestState.waiting_for_test_message, Command('cancel'))
+async def cancel_broadcast_test_message(message: types.Message, state: FSMContext):
+    """Cancel broadcast test at message stage"""
+    await state.clear()
+    await message.answer("❌ Тестовая рассылка отменена")
+
+@content_router.message(BroadcastTestState.waiting_for_test_message)
+async def handle_test_broadcast_message(message: types.Message, state: FSMContext):
+    """Handle test broadcast message and send to specific user"""
+    try:
+        # Get test user ID from state
+        data = await state.get_data()
+        test_user_id = data.get('test_user_id')
+
+        if not test_user_id:
+            await message.answer("❌ Ошибка: не указан ID тестового пользователя")
+            await state.clear()
+            return
+
+        # Send confirmation
+        await message.answer(
+            f"📤 Отправляю тестовое сообщение пользователю {test_user_id}...",
+            parse_mode="HTML"
+        )
+
+        # Send message to test user
+        try:
+            # Forward different message types
+            if message.text:
+                await message.bot.send_message(
+                    chat_id=test_user_id,
+                    text=message.text,
+                    parse_mode=message.parse_mode if hasattr(message, 'parse_mode') else None
+                )
+            elif message.photo:
+                await message.bot.send_photo(
+                    chat_id=test_user_id,
+                    photo=message.photo[-1].file_id,
+                    caption=message.caption
+                )
+            elif message.video:
+                await message.bot.send_video(
+                    chat_id=test_user_id,
+                    video=message.video.file_id,
+                    caption=message.caption
+                )
+            elif message.audio:
+                await message.bot.send_audio(
+                    chat_id=test_user_id,
+                    audio=message.audio.file_id,
+                    caption=message.caption
+                )
+            elif message.voice:
+                await message.bot.send_voice(
+                    chat_id=test_user_id,
+                    voice=message.voice.file_id,
+                    caption=message.caption
+                )
+            elif message.document:
+                await message.bot.send_document(
+                    chat_id=test_user_id,
+                    document=message.document.file_id,
+                    caption=message.caption
+                )
+            else:
+                await message.answer("❌ Неподдерживаемый тип сообщения")
+                await state.clear()
+                return
+
+            # Send success message
+            await message.answer(
+                f"✅ <b>Тестовое сообщение отправлено!</b>\n\n"
+                f"👤 Получатель: <code>{test_user_id}</code>\n\n"
+                f"Если сообщение выглядит правильно, используйте /broadcast для рассылки всем пользователям.",
+                parse_mode="HTML"
+            )
+
+        except Exception as e:
+            error_message = str(e)
+            if "blocked" in error_message.lower() or "chat not found" in error_message.lower():
+                await message.answer(
+                    f"❌ <b>Ошибка отправки</b>\n\n"
+                    f"Пользователь {test_user_id} заблокировал бота или чат не найден.\n"
+                    f"Попробуйте другого пользователя.",
+                    parse_mode="HTML"
+                )
+            else:
+                await message.answer(
+                    f"❌ <b>Ошибка отправки</b>\n\n"
+                    f"Детали: {error_message}",
+                    parse_mode="HTML"
+                )
+            logging.error(f"Failed to send test broadcast to user {test_user_id}: {e}")
+
+        # Clear state
+        await state.clear()
+
+    except Exception as e:
+        logging.error(f"Error in test broadcast handler: {e}")
+        await message.answer("❌ Произошла ошибка при тестовой рассылке")
+        await state.clear()
 
 # Location-based timezone handlers
 @content_router.message(lambda message: message.location is not None, NotificationStates.waiting_for_timezone_location)
