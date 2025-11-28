@@ -1016,49 +1016,12 @@ async def handle_broadcast_message(message: types.Message, state: FSMContext, su
         # Send message to all users
         for user in all_users:
             try:
-                # Forward different message types
-                if message.text:
-                    # Send without parse_mode to allow automatic URL detection
-                    # This makes any URLs in the text automatically clickable
-                    await message.bot.send_message(
-                        chat_id=user.telegram_id,
-                        text=message.text,
-                        disable_web_page_preview=False
-                    )
-                elif message.photo:
-                    await message.bot.send_photo(
-                        chat_id=user.telegram_id,
-                        photo=message.photo[-1].file_id,
-                        caption=message.caption
-                    )
-                elif message.video:
-                    await message.bot.send_video(
-                        chat_id=user.telegram_id,
-                        video=message.video.file_id,
-                        caption=message.caption
-                    )
-                elif message.audio:
-                    await message.bot.send_audio(
-                        chat_id=user.telegram_id,
-                        audio=message.audio.file_id,
-                        caption=message.caption
-                    )
-                elif message.voice:
-                    await message.bot.send_voice(
-                        chat_id=user.telegram_id,
-                        voice=message.voice.file_id,
-                        caption=message.caption
-                    )
-                elif message.document:
-                    await message.bot.send_document(
-                        chat_id=user.telegram_id,
-                        document=message.document.file_id,
-                        caption=message.caption
-                    )
-                else:
-                    # Unsupported message type, skip
-                    failed_count += 1
-                    continue
+                # Use copy_message to preserve all formatting, entities, and links
+                await message.bot.copy_message(
+                    chat_id=user.telegram_id,
+                    from_chat_id=message.chat.id,
+                    message_id=message.message_id
+                )
 
                 success_count += 1
 
@@ -1185,49 +1148,12 @@ async def handle_test_broadcast_message(message: types.Message, state: FSMContex
 
         # Send message to test user
         try:
-            # Forward different message types
-            if message.text:
-                # Send without parse_mode to allow automatic URL detection
-                # This makes any URLs in the text automatically clickable
-                await message.bot.send_message(
-                    chat_id=test_user_id,
-                    text=message.text,
-                    disable_web_page_preview=False
-                )
-            elif message.photo:
-                await message.bot.send_photo(
-                    chat_id=test_user_id,
-                    photo=message.photo[-1].file_id,
-                    caption=message.caption
-                )
-            elif message.video:
-                await message.bot.send_video(
-                    chat_id=test_user_id,
-                    video=message.video.file_id,
-                    caption=message.caption
-                )
-            elif message.audio:
-                await message.bot.send_audio(
-                    chat_id=test_user_id,
-                    audio=message.audio.file_id,
-                    caption=message.caption
-                )
-            elif message.voice:
-                await message.bot.send_voice(
-                    chat_id=test_user_id,
-                    voice=message.voice.file_id,
-                    caption=message.caption
-                )
-            elif message.document:
-                await message.bot.send_document(
-                    chat_id=test_user_id,
-                    document=message.document.file_id,
-                    caption=message.caption
-                )
-            else:
-                await message.answer("❌ Неподдерживаемый тип сообщения")
-                await state.clear()
-                return
+            # Use copy_message to preserve all formatting, entities, and links
+            await message.bot.copy_message(
+                chat_id=test_user_id,
+                from_chat_id=message.chat.id,
+                message_id=message.message_id
+            )
 
             # Send success message
             await message.answer(
