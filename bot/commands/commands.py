@@ -1018,11 +1018,27 @@ async def handle_broadcast_message(message: types.Message, state: FSMContext, su
             try:
                 # Forward different message types
                 if message.text:
-                    await message.bot.send_message(
-                        chat_id=user.telegram_id,
-                        text=message.text,
-                        parse_mode=message.parse_mode if hasattr(message, 'parse_mode') else None
-                    )
+                    # Try to send with Markdown formatting first, fallback to plain text
+                    try:
+                        await message.bot.send_message(
+                            chat_id=user.telegram_id,
+                            text=message.text,
+                            parse_mode="Markdown"
+                        )
+                    except Exception as markdown_error:
+                        # If Markdown fails, try HTML
+                        try:
+                            await message.bot.send_message(
+                                chat_id=user.telegram_id,
+                                text=message.text,
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            # If both fail, send as plain text
+                            await message.bot.send_message(
+                                chat_id=user.telegram_id,
+                                text=message.text
+                            )
                 elif message.photo:
                     await message.bot.send_photo(
                         chat_id=user.telegram_id,
@@ -1185,11 +1201,27 @@ async def handle_test_broadcast_message(message: types.Message, state: FSMContex
         try:
             # Forward different message types
             if message.text:
-                await message.bot.send_message(
-                    chat_id=test_user_id,
-                    text=message.text,
-                    parse_mode=message.parse_mode if hasattr(message, 'parse_mode') else None
-                )
+                # Try to send with Markdown formatting first, fallback to plain text
+                try:
+                    await message.bot.send_message(
+                        chat_id=test_user_id,
+                        text=message.text,
+                        parse_mode="Markdown"
+                    )
+                except Exception as markdown_error:
+                    # If Markdown fails, try HTML
+                    try:
+                        await message.bot.send_message(
+                            chat_id=test_user_id,
+                            text=message.text,
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        # If both fail, send as plain text
+                        await message.bot.send_message(
+                            chat_id=test_user_id,
+                            text=message.text
+                        )
             elif message.photo:
                 await message.bot.send_photo(
                     chat_id=test_user_id,
