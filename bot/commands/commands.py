@@ -162,6 +162,97 @@ async def process_slot_selection(callback_query: types.CallbackQuery, supabase_c
         await callback_query.message.edit_text("Произошла ошибка при бронировании.")
 
 
+@content_router.message(Command('package'))
+async def package_command(message: types.Message):
+    """Handle package command - show available programs"""
+    try:
+        # Create inline keyboard with two package options
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Сопровождение (4 недели)",
+                callback_data="package_soprovozhdenie"
+            )],
+            [InlineKeyboardButton(
+                text="Консультация",
+                callback_data="package_consultation"
+            )]
+        ])
+
+        await message.answer(
+            "Вы можете выбрать программу, которая соответствует вашим целям:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logging.error(f"Error in package command: {e}")
+        await message.answer("Ошибка при загрузке пакетов.")
+
+@content_router.callback_query(lambda c: c.data == 'package_soprovozhdenie')
+async def handle_soprovozhdenie_package(callback_query: types.CallbackQuery):
+    """Handle 'Сопровождение' package selection"""
+    try:
+        # Create button for booking
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Записаться на программу",
+                web_app=WebAppInfo(url=Config.BOOKING_LINK)
+            )]
+        ])
+
+        package_text = (
+            "<b>Сопровождение (от 4 недель)</b>\n\n"
+            "▫️ Консультация (разбор анкеты, пищевого дневника) и звонок на 60 минут перед сопровождением.\n\n"
+            "▫️ Ежедневное ведение в Telegram: контроль, материалы по питанию, поддержка.\n\n"
+            "▫️ Еженедельные практики и методички по работе с пищевым поведением.\n\n"
+            "▫️ Глубокий анализ организма: оцениваем состояние желудочно-кишечного тракта, эндокринной и гормональной систем, возможных дефицитов.\n\n"
+            "<b>Стоимость:</b> от 15 000 руб."
+        )
+
+        await callback_query.message.edit_text(
+            package_text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        await callback_query.answer()
+    except Exception as e:
+        logging.error(f"Error in soprovozhdenie package handler: {e}")
+        await callback_query.answer("Ошибка при загрузке информации о пакете")
+
+@content_router.callback_query(lambda c: c.data == 'package_consultation')
+async def handle_consultation_package(callback_query: types.CallbackQuery):
+    """Handle 'Консультация' package selection"""
+    try:
+        # Create button for booking
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Записаться на программу",
+                web_app=WebAppInfo(url=Config.BOOKING_LINK)
+            )]
+        ])
+
+        package_text = (
+            "<b>Консультация</b>\n"
+            "<b>60 минут</b>\n\n"
+            "▫️ Бесплатная консультация-знакомство и выявление запроса\n\n"
+            "▫️ Разбор анкеты о вашем состоянии\n\n"
+            "▫️ Разбор пищевого дневника за 3 дня\n\n"
+            "▫️ PDF-файл по итогу консультации:\n"
+            "   • Рекомендации по питанию\n"
+            "   • Работа с режимом, привычками\n"
+            "   • Ответы на вопросы в течение 14 дней\n\n"
+            "<b>Стоимость:</b> 5 000₽"
+        )
+
+        await callback_query.message.edit_text(
+            package_text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        await callback_query.answer()
+    except Exception as e:
+        logging.error(f"Error in consultation package handler: {e}")
+        await callback_query.answer("Ошибка при загрузке информации о пакете")
+
 @content_router.message(Command('settings'))
 async def settings_command(message: types.Message, supabase_client):
     """Settings command handler"""

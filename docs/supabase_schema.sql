@@ -9,6 +9,7 @@ CREATE TABLE users (
     isAudio BOOLEAN DEFAULT FALSE,
     notification BOOLEAN DEFAULT FALSE,
     timezone VARCHAR(10) DEFAULT 'UTC', -- User's timezone (e.g., 'UTC+1', 'UTC-5')
+    book_received BOOLEAN DEFAULT FALSE, -- Track if user received the vitamin book
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -34,14 +35,53 @@ CREATE TABLE notification_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Documents table for RAG pipeline (embeddings using text-embedding-3-large: 3072 dimensions)
+CREATE TABLE documents (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(500),
+    content TEXT NOT NULL,
+    file_path VARCHAR(1000),
+    embedding vector(3072), -- OpenAI text-embedding-3-large
+    metadata JSONB,
+    is_favorite BOOLEAN DEFAULT FALSE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    ingestion_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Video contents table for video transcripts with embeddings
+CREATE TABLE video_contents (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(500),
+    transcript TEXT,
+    video_url VARCHAR(1000),
+    embedding vector(3072), -- OpenAI text-embedding-3-large
+    is_favorite BOOLEAN DEFAULT FALSE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Create indexes for better performance
 CREATE INDEX idx_users_telegram_id ON users(telegram_id);
 CREATE INDEX idx_notification_settings_user_id ON notification_settings(user_id);
+CREATE INDEX idx_documents_user_id ON documents(user_id);
+CREATE INDEX idx_video_contents_user_id ON video_contents(user_id);
+-- Note: Vector indexes (HNSW/IVFFlat) have a 2000 dimension limit in pgvector
+-- Since we're using 3072 dimensions (text-embedding-3-large), we can't index the embeddings
+-- The similarity search functions will use sequential scans, which is acceptable for small-medium datasets
+-- For better performance with large datasets, consider:
+--   1. Using text-embedding-3-small (1536 dimensions) instead
+--   2. Applying dimensionality reduction techniques
+--   3. Upgrading to a newer pgvector version when available
 
 -- Enable Row Level Security
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notification_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE video_contents ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for users table
 CREATE POLICY "Allow anonymous user creation" ON users
@@ -68,13 +108,25 @@ CREATE POLICY "Users can read own messages" ON user_messages
 
 -- RLS Policies for notification_settings table
 CREATE POLICY "Users can manage own notification settings" ON notification_settings
-    FOR ALL 
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+
+-- RLS Policies for documents table
+CREATE POLICY "Users can manage own documents" ON documents
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+
+-- RLS Policies for video_contents table
+CREATE POLICY "Users can manage own video contents" ON video_contents
+    FOR ALL
     USING (true)
     WITH CHECK (true);
 
 -- Function to search documents by similarity
 CREATE OR REPLACE FUNCTION search_documents(
-    query_embedding vector(1536),
+    query_embedding vector(3072),
     user_id INTEGER,
     match_threshold FLOAT,
     match_count INTEGER
@@ -82,7 +134,7 @@ CREATE OR REPLACE FUNCTION search_documents(
 RETURNS TABLE (
     id INTEGER,
     title VARCHAR(500),
-    content_text TEXT,
+    content TEXT,
     file_path VARCHAR(1000),
     is_favorite BOOLEAN,
     similarity FLOAT
@@ -91,10 +143,10 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         d.id,
         d.title,
-        d.content_text,
+        d.content,
         d.file_path,
         d.is_favorite,
         1 - (d.embedding <=> query_embedding) AS similarity
@@ -108,7 +160,7 @@ $$;
 
 -- Function to search video contents by similarity
 CREATE OR REPLACE FUNCTION search_videos(
-    query_embedding vector(1536),
+    query_embedding vector(3072),
     user_id INTEGER,
     match_threshold FLOAT,
     match_count INTEGER
