@@ -1,0 +1,15 @@
+# Ignore Python server (not needed for static deployment)
+server.py
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore development files
+.env
+.env.local
+*.log
+
+# Ignore Git
+.git/
+.gitignore
