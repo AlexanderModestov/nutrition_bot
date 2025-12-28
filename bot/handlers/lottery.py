@@ -16,10 +16,11 @@ from typing import Optional, Set, Dict
 from decimal import Decimal
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from pydantic import BaseModel, Field
+from urllib.parse import urlencode
 
 from bot.services.yookassa_service import YooKassaService
 from bot.config import Config
@@ -114,7 +115,6 @@ class Prize(BaseModel):
     # Для типа PAYMENT_FLOW
     price: Optional[Decimal] = Field(None, description="Цена услуги (для платных призов)")
     currency: Optional[str] = Field("RUB", description="Валюта")
-    form_url: Optional[str] = Field(None, description="URL анкеты (отправляется после оплаты)")
 
     # Кнопки
     primary_btn: Optional[Button] = Field(None, description="Основная кнопка (Оплатить/Написать/Скачать)")
@@ -144,16 +144,17 @@ PRIZES = [
         id=2,
         image="prize_2.jpg",
         caption=(
-            "🏆 <b>Главный куш!</b>\n\n"
-            "Вы получили <b>скидку на программу наставничества</b> от Анастасии Шарковой!\n\n"
-            "Это ваш шанс начать путь к здоровому образу жизни с персональной поддержкой 🌟\n\n"
-            "➡️ Забронируйте скидку и заполните анкету для начала работы."
+            "Вы сорвали главный куш 🏆!\n\n"
+            "Это полноценный старт в новом году: месяц персональной заботы о вашем здоровье, питании. "
+            "Выявим дефициты, выработаем новые пищевые привычки, уйдут лишние килограммы.\n\n"
+            "Персональное ведение включает подробную консультацию по видеосвязи, ежедневный разбор питания "
+            "и работа с психоэмоциональными причинами состояния.\n\n"
+            "Начать программу можно до 7 января включительно."
         ),
         type=PrizeType.PAYMENT_FLOW,
-        price=Decimal("1"),  # Символическая цена для бронирования (или реальная цена со скидкой)
+        price=Decimal("12000"),
         currency="RUB",
-        form_url="https://forms.gle/YOUR_MENTORSHIP_FORM_ID",  # Замените на реальную форму
-        primary_btn=Button(text="🎯 Забронировать скидку")  # URL создается динамически
+        primary_btn=Button(text="🎯 Забронировать скидку")
     ),
 
     # Prize 3: Сборник десертов (FILE)
@@ -178,13 +179,12 @@ PRIZES = [
             "🎧 <b>Аудио-консультация всего за 990₽!</b>\n\n"
             "Полноценный разбор вашего запроса, но в формате удобного аудио. "
             "Слушайте в машине, на прогулке или за чаем — когда вам комфортно.\n\n"
-            "➡️ Кликайте «Записаться за 990₽», чтобы оплатить и получить анкету для аудио-консультации."
+            "➡️ Кликайте «Записаться за 990₽», чтобы оплатить услугу."
         ),
         type=PrizeType.PAYMENT_FLOW,
         price=Decimal("990"),
         currency="RUB",
-        form_url="https://forms.gle/YOUR_AUDIO_CONSULT_FORM?entry.telegram_id={telegram_id}",  # Замените
-        primary_btn=Button(text="🎤 Записаться за 990₽")  # URL создается динамически
+        primary_btn=Button(text="🎤 Записаться за 990₽")
     ),
 
     # Prize 5: Чек-лист 10 шагов (FILE)
@@ -253,13 +253,13 @@ def get_start_keyboard():
     return builder.as_markup()
 
 
-def get_prize_keyboard(prize: Prize, payment_url: Optional[str] = None):
+def get_prize_keyboard(prize: Prize, payment_data: Optional[Dict[str, str]] = None):
     """
     Создает клавиатуру для приза
 
     Args:
         prize: Объект приза
-        payment_url: URL для оплаты (для типа PAYMENT_FLOW)
+        payment_data: Данные для встроенного платежа (confirmation_token, amount, etc.)
 
     Returns:
         InlineKeyboardMarkup или None
@@ -268,9 +268,22 @@ def get_prize_keyboard(prize: Prize, payment_url: Optional[str] = None):
 
     # Добавляем основную кнопку
     if prize.primary_btn:
-        if prize.type == PrizeType.PAYMENT_FLOW and payment_url:
-            # Для платежа используем динамически созданный URL
-            builder.button(text=prize.primary_btn.text, url=payment_url)
+        if prize.type == PrizeType.PAYMENT_FLOW and payment_data:
+            # Для платежа создаем WebApp кнопку с виджетом YooKassa
+            webapp_params = urlencode({
+                'payment_id': payment_data['confirmation_token'],
+                'product_name': prize.primary_btn.text,
+                'product_description': 'Приз из Новогодней Лотереи',
+                'amount': payment_data['amount'],
+                'currency': payment_data['currency'],
+                'return_url': Config.YOOKASSA_RETURN_URL
+            })
+            webapp_url = f"{Config.WEBAPP_URL}/payment?{webapp_params}"
+
+            builder.button(
+                text=prize.primary_btn.text,
+                web_app=WebAppInfo(url=webapp_url)
+            )
         elif prize.primary_btn.url:
             # Для обычных ссылок используем URL из модели
             builder.button(text=prize.primary_btn.text, url=prize.primary_btn.url)
@@ -319,7 +332,10 @@ async def send_image_with_fallback(
 
         if is_callback:
             # Для callback удаляем старое сообщение и отправляем новое
-            await message.delete()
+            try:
+                await message.delete()
+            except Exception as e:
+                logger.warning(f"Could not delete message: {e}")
             return await message.answer_photo(
                 photo=photo,
                 caption=caption,
@@ -338,7 +354,10 @@ async def send_image_with_fallback(
         logger.warning(f"Image file not found: {image_path}. Sending text only. Error: {e}")
 
         if is_callback:
-            await message.delete()
+            try:
+                await message.delete()
+            except Exception as del_error:
+                logger.warning(f"Could not delete message: {del_error}")
             return await message.answer(
                 text=caption,
                 reply_markup=reply_markup,
@@ -355,7 +374,10 @@ async def send_image_with_fallback(
         logger.error(f"Error sending image {image_path}: {e}")
 
         if is_callback:
-            await message.delete()
+            try:
+                await message.delete()
+            except Exception as del_error:
+                logger.warning(f"Could not delete message: {del_error}")
             return await message.answer(
                 text=caption,
                 reply_markup=reply_markup,
@@ -434,21 +456,32 @@ async def show_lottery_start(message: Message):
 async def create_lottery_payment(
     telegram_id: int,
     username: Optional[str],
-    prize: Prize
-) -> Optional[str]:
+    prize: Prize,
+    supabase_client
+) -> Optional[Dict[str, str]]:
     """
-    Создает платеж для приза лотереи
+    Создает встроенный платеж для приза лотереи (WebApp виджет)
 
     Args:
         telegram_id: ID пользователя в Telegram
         username: Username пользователя
         prize: Объект приза
+        supabase_client: Клиент Supabase для сохранения транзакции
 
     Returns:
-        URL для оплаты или None в случае ошибки
+        Dict с confirmation_token и payment_id или None в случае ошибки
     """
     try:
         yookassa_service = YooKassaService()
+
+        # Get or create user
+        user = await supabase_client.get_user_by_telegram_id(telegram_id)
+        if not user:
+            user_data = {
+                'telegram_id': telegram_id,
+                'username': username
+            }
+            user = await supabase_client.create_or_update_user(user_data)
 
         # Generate idempotence key
         idempotence_key = yookassa_service.generate_idempotence_key()
@@ -458,12 +491,11 @@ async def create_lottery_payment(
             'telegram_id': str(telegram_id),
             'username': username or '',
             'prize_id': str(prize.id),
-            'source': 'lottery',  # Флаг что это платеж из лотереи
-            'form_url': prize.form_url or ''  # URL анкеты для отправки после оплаты
+            'source': 'lottery'  # Флаг что это платеж из лотереи
         }
 
-        # Create payment
-        payment_result = yookassa_service.create_payment(
+        # Create embedded payment (для виджета в WebApp)
+        payment_result = yookassa_service.create_embedded_payment(
             amount=prize.price,
             currency=prize.currency,
             description=f"Лотерея: {prize.primary_btn.text if prize.primary_btn else 'Приз'}",
@@ -471,13 +503,39 @@ async def create_lottery_payment(
             idempotence_key=idempotence_key
         )
 
+        # Save transaction to database
+        transaction_data = {
+            'user_id': user.id if user else None,
+            'telegram_id': telegram_id,
+            'product_id': None,  # Lottery prizes don't have product_id
+            'yookassa_payment_id': payment_result['payment_id'],
+            'idempotence_key': idempotence_key,
+            'amount': float(prize.price),
+            'currency': prize.currency,
+            'status': payment_result['status'],
+            'confirmation_url': payment_result.get('confirmation_token'),  # Store token
+            'confirmation_type': payment_result['confirmation_type'],
+            'metadata': metadata
+        }
+
+        transaction = await supabase_client.create_payment_transaction(transaction_data)
+
+        if not transaction:
+            logger.error(f"Failed to save lottery transaction to database")
+            return None
+
         logger.info(
-            f"Lottery payment created: user_id={telegram_id}, prize_id={prize.id}, "
+            f"Lottery embedded payment created: user_id={telegram_id}, prize_id={prize.id}, "
             f"payment_id={payment_result['payment_id']}, amount={prize.price}"
         )
 
-        # Return confirmation URL for payment
-        return payment_result.get('confirmation_url')
+        # Return data for WebApp
+        return {
+            'confirmation_token': payment_result.get('confirmation_token'),
+            'payment_id': payment_result['payment_id'],
+            'amount': str(prize.price),
+            'currency': prize.currency
+        }
 
     except Exception as e:
         logger.error(f"Error creating lottery payment for user {telegram_id}, prize {prize.id}: {e}")
@@ -485,7 +543,7 @@ async def create_lottery_payment(
 
 
 @lottery_router.callback_query(F.data == "start_lottery")
-async def callback_start_lottery(callback: CallbackQuery):
+async def callback_start_lottery(callback: CallbackQuery, supabase_client):
     """Обработчик нажатия кнопки 'Крутить колесо удачи'"""
     # Проверяем, является ли пользователь администратором
     is_admin = callback.from_user.id in Config.get_admin_ids()
@@ -509,22 +567,23 @@ async def callback_start_lottery(callback: CallbackQuery):
     # Обработка приза в зависимости от типа
     if prize.type == PrizeType.PAYMENT_FLOW:
         # ===== ПЛАТНЫЕ ПРИЗЫ =====
-        # Создаем платеж для приза
-        payment_url = await create_lottery_payment(
+        # Создаем встроенный платеж для приза (WebApp виджет)
+        payment_data = await create_lottery_payment(
             telegram_id=callback.from_user.id,
             username=callback.from_user.username,
-            prize=prize
+            prize=prize,
+            supabase_client=supabase_client
         )
 
-        if not payment_url:
+        if not payment_data:
             await callback.message.answer(
                 "❌ Произошла ошибка при создании платежа.\n"
                 "Попробуйте позже или обратитесь к @sharkova_na"
             )
             return
 
-        # Получаем клавиатуру с кнопкой оплаты
-        keyboard = get_prize_keyboard(prize, payment_url=payment_url)
+        # Получаем клавиатуру с WebApp кнопкой оплаты
+        keyboard = get_prize_keyboard(prize, payment_data=payment_data)
 
         # Отправляем приз с кнопкой оплаты
         await send_image_with_fallback(
@@ -534,7 +593,7 @@ async def callback_start_lottery(callback: CallbackQuery):
             reply_markup=keyboard
         )
 
-        logger.info(f"Payment prize sent: user={callback.from_user.id}, prize={prize.id}, url={payment_url}")
+        logger.info(f"Payment prize sent (WebApp): user={callback.from_user.id}, prize={prize.id}, payment_id={payment_data['payment_id']}")
 
     elif prize.type == PrizeType.FILE:
         # ===== ПРИЗЫ С ФАЙЛАМИ =====

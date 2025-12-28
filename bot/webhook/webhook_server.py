@@ -137,14 +137,15 @@ class WebhookServer:
             if is_lottery:
                 # ===== LOTTERY PAYMENT =====
                 prize_id = metadata.get('prize_id', 'N/A')
-                form_url = metadata.get('form_url', '')
+                username = metadata.get('username', 'Не указан')
 
-                # Send success message
+                # Send success message to USER
                 message_text = (
                     f"✅ <b>Оплата успешно завершена!</b>\n\n"
                     f"<b>Сумма:</b> {result['amount']} {result['currency']}\n"
                     f"<b>Номер платежа:</b> <code>{result['payment_id']}</code>\n\n"
-                    f"Поздравляем! Ваш приз ждет вас 🎁"
+                    f"Поздравляем! Ваш приз ждет вас 🎁\n\n"
+                    f"В ближайшее время с вами свяжется Анастасия для уточнения деталей."
                 )
 
                 await self.bot.send_message(
@@ -153,30 +154,34 @@ class WebhookServer:
                     parse_mode="HTML"
                 )
 
-                # Send form link if available
-                if form_url:
-                    # Replace {telegram_id} placeholder with actual telegram_id
-                    personalized_form_url = form_url.replace('{telegram_id}', str(telegram_id))
+                logger.info(
+                    f"Lottery payment success: transaction_id={transaction.id}, "
+                    f"prize_id={prize_id}"
+                )
 
-                    form_text = (
-                        f"📋 <b>Заполните анкету</b>\n\n"
-                        f"Пожалуйста, заполните анкету для получения услуги:\n\n"
-                        f"👉 <a href=\"{personalized_form_url}\">Открыть анкету</a>\n\n"
-                        f"После заполнения анкеты с вами свяжется Анастасия для уточнения деталей."
-                    )
+                # Send notification to ADMINS
+                from bot.config import Config
+                admin_ids = Config.get_admin_ids()
 
-                    await self.bot.send_message(
-                        chat_id=telegram_id,
-                        text=form_text,
-                        parse_mode="HTML"
-                    )
+                admin_notification = (
+                    f"💰 <b>Новая оплата в лотерее!</b>\n\n"
+                    f"<b>Пользователь:</b> @{username if username != 'Не указан' else 'username_not_set'}\n"
+                    f"<b>Telegram ID:</b> <code>{telegram_id}</code>\n"
+                    f"<b>Приз:</b> #{prize_id}\n"
+                    f"<b>Сумма:</b> {result['amount']} {result['currency']}\n"
+                    f"<b>Платёж ID:</b> <code>{result['payment_id']}</code>"
+                )
 
-                    logger.info(
-                        f"Lottery payment success: transaction_id={transaction.id}, "
-                        f"prize_id={prize_id}, form_sent=True"
-                    )
-                else:
-                    logger.warning(f"Lottery payment success but no form_url: prize_id={prize_id}")
+                for admin_id in admin_ids:
+                    try:
+                        await self.bot.send_message(
+                            chat_id=admin_id,
+                            text=admin_notification,
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"Admin notification sent to {admin_id} for lottery payment {result['payment_id']}")
+                    except Exception as admin_error:
+                        logger.error(f"Failed to send admin notification to {admin_id}: {admin_error}")
 
             else:
                 # ===== REGULAR PAYMENT =====
