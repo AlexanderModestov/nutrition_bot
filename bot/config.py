@@ -30,7 +30,6 @@ class Config:
     
     DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
     RATE_LIMIT_REQUESTS_PER_DAY = int(os.getenv('RATE_LIMIT_REQUESTS_PER_DAY', '50'))
-    WEBAPP_URL = os.getenv('WEBAPP_URL', 'https://your-webapp-domain.com')
 
     # Channel subscription settings
     CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', 'odnimsalatom')
@@ -38,6 +37,24 @@ class Config:
 
     # Booking settings
     BOOKING_LINK = os.getenv('booking_link', 'https://qlick.io/widget/alexander-97/meeting-60m/start')
+
+    # YooKassa payment settings
+    YOOKASSA_SHOP_ID = os.getenv('YOOKASSA_SHOP_ID')
+    YOOKASSA_SECRET_KEY = os.getenv('YOOKASSA_SECRET_KEY')
+    YOOKASSA_RETURN_URL = os.getenv('YOOKASSA_RETURN_URL', 'https://t.me/AnastasiaSharkova_bot')
+
+    # Telegram native payments (get this from @BotFather -> /mybots -> Payments)
+    YOOKASSA_PROVIDER_TOKEN = os.getenv('YOOKASSA_PROVIDER_TOKEN')
+
+    # WebApp settings (MUST be HTTPS for production!)
+    # For testing with ngrok: WEBAPP_URL=https://abc123.ngrok-free.app
+    # For production with Vercel: WEBAPP_URL=https://your-app.vercel.app
+    WEBAPP_URL = os.getenv('WEBAPP_URL')
+
+    # Webhook settings for payment notifications
+    WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', '0.0.0.0')
+    WEBHOOK_PORT = int(os.getenv('WEBHOOK_PORT', '8443'))
+    WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # Public URL for YooKassa (e.g., https://yourdomain.com/webhook/yookassa)
 
     # RAG Pipeline Prompt Template
 #    RAG_PROMPT_TEMPLATE = """
@@ -111,15 +128,18 @@ class Config:
             'TELEGRAM_BOT_TOKEN',
             'SUPABASE_URL',
             'SUPABASE_KEY',
-            'OPENAI_API_KEY'
+            'OPENAI_API_KEY',
+            'YOOKASSA_SHOP_ID',
+            'YOOKASSA_SECRET_KEY'
+            # YOOKASSA_PROVIDER_TOKEN is only needed for native Telegram payments
         ]
-        
+
         missing_vars = []
         for var in required_vars:
             if not getattr(cls, var):
                 missing_vars.append(var)
-        
+
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
-        
+
         return True

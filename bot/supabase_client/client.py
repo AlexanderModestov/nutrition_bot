@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Optional, Dict, Any
 from supabase import create_client, Client
-from .models import User, NotificationSettings
+from .models import User, NotificationSettings, PaymentProduct, PaymentTransaction
 
 class SupabaseClient:
     def __init__(self, supabase_url: str, supabase_key: str):
@@ -412,3 +412,125 @@ class SupabaseClient:
                 'new_last_week': 0,
                 'notification_enabled': 0
             }
+
+    # Payment-related methods
+    async def get_active_payment_products(self) -> List[PaymentProduct]:
+        """Get all active payment products"""
+        try:
+            response = self.client.table('payment_products').select('*').eq('is_active', True).order('price_amount').execute()
+            if response.data:
+                return [PaymentProduct(**product) for product in response.data]
+            return []
+        except Exception as e:
+            import logging
+            logging.error(f"Error getting payment products: {e}")
+            return []
+
+    async def get_payment_product_by_id(self, product_id: int) -> Optional[PaymentProduct]:
+        """Get payment product by ID"""
+        try:
+            response = self.client.table('payment_products').select('*').eq('id', product_id).execute()
+            if response.data:
+                return PaymentProduct(**response.data[0])
+            return None
+        except Exception as e:
+            import logging
+            logging.error(f"Error getting payment product: {e}")
+            return None
+
+    async def create_payment_transaction(self, transaction_data: dict) -> Optional[PaymentTransaction]:
+        """Create new payment transaction"""
+        try:
+            response = self.client.table('payment_transactions').insert(transaction_data).execute()
+            if response.data:
+                return PaymentTransaction(**response.data[0])
+            return None
+        except Exception as e:
+            import logging
+            logging.error(f"Error creating payment transaction: {e}")
+            return None
+
+    async def update_payment_transaction(self, transaction_id: int, update_data: dict) -> Optional[PaymentTransaction]:
+        """Update payment transaction"""
+        try:
+            response = self.client.table('payment_transactions').update(update_data).eq('id', transaction_id).execute()
+            if response.data:
+                return PaymentTransaction(**response.data[0])
+            return None
+        except Exception as e:
+            import logging
+            logging.error(f"Error updating payment transaction: {e}")
+            return None
+
+    async def get_transaction_by_yookassa_id(self, yookassa_payment_id: str) -> Optional[PaymentTransaction]:
+        """Get transaction by YooKassa payment ID"""
+        try:
+            response = self.client.table('payment_transactions').select('*').eq('yookassa_payment_id', yookassa_payment_id).execute()
+            if response.data:
+                return PaymentTransaction(**response.data[0])
+            return None
+        except Exception as e:
+            import logging
+            logging.error(f"Error getting transaction by YooKassa ID: {e}")
+            return None
+
+    async def get_transaction_by_id(self, transaction_id: int) -> Optional[PaymentTransaction]:
+        """Get transaction by transaction ID"""
+        try:
+            response = self.client.table('payment_transactions').select('*').eq('id', transaction_id).execute()
+            if response.data:
+                return PaymentTransaction(**response.data[0])
+            return None
+        except Exception as e:
+            import logging
+            logging.error(f"Error getting transaction by ID: {e}")
+            return None
+
+    async def get_user_transactions(self, telegram_id: int, limit: int = 10) -> List[PaymentTransaction]:
+        """Get user's payment transactions"""
+        try:
+            response = self.client.table('payment_transactions').select('*').eq('telegram_id', telegram_id).order('created_at', desc=True).limit(limit).execute()
+            if response.data:
+                return [PaymentTransaction(**tx) for tx in response.data]
+            return []
+        except Exception as e:
+            import logging
+            logging.error(f"Error getting user transactions: {e}")
+            return []
+
+    async def get_successful_transactions_count(self, telegram_id: int) -> int:
+        """Get count of successful transactions for user"""
+        try:
+            response = self.client.table('payment_transactions').select('id', count='exact').eq('telegram_id', telegram_id).eq('status', 'succeeded').execute()
+            return response.count if response.count else 0
+        except Exception as e:
+            import logging
+            logging.error(f"Error counting successful transactions: {e}")
+            return 0
+
+    # Lottery-related methods
+    async def check_lottery_participation(self, telegram_id: int) -> bool:
+        """Check if user has already participated in lottery"""
+        try:
+            user = await self.get_user_by_telegram_id(telegram_id)
+            if user:
+                return user.lottery_participated or False
+            return False
+        except Exception as e:
+            import logging
+            logging.error(f"Error checking lottery participation: {e}")
+            return False
+
+    async def mark_lottery_participated(self, telegram_id: int) -> bool:
+        """Mark user as participated in lottery"""
+        try:
+            user_data = {
+                'telegram_id': telegram_id,
+                'lottery_participated': True
+            }
+            result = await self.create_or_update_user(user_data)
+            return result is not None
+        except Exception as e:
+            import logging
+            logging.error(f"Error marking lottery participation: {e}")
+            return False
