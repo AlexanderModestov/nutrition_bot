@@ -388,8 +388,11 @@ async def show_lottery_start(message: Message):
     Args:
         message: Объект сообщения
     """
-    # Проверяем, участвовал ли пользователь ранее
-    if participants_manager.has_participated(message.from_user.id):
+    # Проверяем, является ли пользователь администратором
+    is_admin = message.from_user.id in Config.get_admin_ids()
+
+    # Проверяем, участвовал ли пользователь ранее (админы могут участвовать неограниченно)
+    if not is_admin and participants_manager.has_participated(message.from_user.id):
         logger.info(f"User {message.from_user.id} tried to participate again (already participated)")
         await message.answer(
             "❌ Вы уже участвовали в Новогодней Лотерее!\n\n"
@@ -484,8 +487,11 @@ async def create_lottery_payment(
 @lottery_router.callback_query(F.data == "start_lottery")
 async def callback_start_lottery(callback: CallbackQuery):
     """Обработчик нажатия кнопки 'Крутить колесо удачи'"""
-    # Проверяем, не участвовал ли пользователь уже (двойная проверка)
-    if participants_manager.has_participated(callback.from_user.id):
+    # Проверяем, является ли пользователь администратором
+    is_admin = callback.from_user.id in Config.get_admin_ids()
+
+    # Проверяем, не участвовал ли пользователь уже (админы могут участвовать неограниченно)
+    if not is_admin and participants_manager.has_participated(callback.from_user.id):
         await callback.answer("❌ Вы уже участвовали в лотерее!", show_alert=True)
         logger.warning(f"User {callback.from_user.id} tried to spin wheel again (already participated)")
         return
@@ -587,8 +593,12 @@ async def callback_start_lottery(callback: CallbackQuery):
 
         logger.info(f"Link prize sent: user={callback.from_user.id}, prize={prize.id}")
 
-    # Добавляем пользователя в список участников (после успешной отправки приза)
-    participants_manager.add_participant(callback.from_user.id)
+    # Добавляем пользователя в список участников (админы не добавляются, могут участвовать бесконечно)
+    if not is_admin:
+        participants_manager.add_participant(callback.from_user.id)
+        logger.info(f"User {callback.from_user.id} added to participants")
+    else:
+        logger.info(f"Admin {callback.from_user.id} received prize (not added to participants)")
 
 
 @lottery_router.callback_query(F.data.startswith("prize_action_"))
