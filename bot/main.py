@@ -7,6 +7,8 @@ from bot.supabase_client import SupabaseClient
 from bot.commands.commands import start_router, content_router
 from bot.handlers.handlers import question_router, query_router
 from bot.callbacks.callbacks import callback_router
+from bot.handlers.payment_handlers import payment_router
+from bot.handlers.lottery import lottery_router
 
 # Configure logging
 logging.basicConfig(
@@ -39,6 +41,8 @@ async def main():
         dp.include_router(start_router)
         dp.include_router(content_router)
         dp.include_router(callback_router)
+        dp.include_router(payment_router)
+        dp.include_router(lottery_router)
         dp.include_router(question_router)
         dp.include_router(query_router)
         

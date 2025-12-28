@@ -6,3 +6,7 @@ data/*
 .env
 .venv
 **/__pycache__/
+sql_batches/*
+
+# Temporary lottery data (do not commit)
+bot/lottery_participants.json
