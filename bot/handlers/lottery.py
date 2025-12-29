@@ -451,8 +451,6 @@ async def show_lottery_start(message: Message):
         )
         return
 
-    start_image_path = os.path.join(CARDS_DIR, "start.jpg")
-
     welcome_text = (
         "Это беспроигрышная лотерея! Скорее нажимайте на кнопку \"Крутить колесо удачи\" "
         "и узнайте, что вам выпадет.\n\n"
@@ -471,12 +469,8 @@ async def show_lottery_start(message: Message):
 
     keyboard = get_start_keyboard()
 
-    await send_image_with_fallback(
-        message_or_query=message,
-        image_path=start_image_path,
-        caption=welcome_text,
-        reply_markup=keyboard
-    )
+    # Отправляем только текстовое сообщение с кнопкой
+    await message.answer(welcome_text, reply_markup=keyboard)
 
     logger.info(f"User {message.from_user.id} started lottery")
 
@@ -775,8 +769,6 @@ async def callback_check_lottery_subscription(callback: CallbackQuery):
         return
 
     # Показываем стартовое меню лотереи
-    start_image_path = os.path.join(CARDS_DIR, "start.jpg")
-
     welcome_text = (
         "Это беспроигрышная лотерея! Скорее нажимайте на кнопку \"Крутить колесо удачи\" "
         "и узнайте, что вам выпадет.\n\n"
@@ -795,11 +787,7 @@ async def callback_check_lottery_subscription(callback: CallbackQuery):
 
     keyboard = get_start_keyboard()
 
-    await send_image_with_fallback(
-        message_or_query=callback.message,
-        image_path=start_image_path,
-        caption=welcome_text,
-        reply_markup=keyboard
-    )
+    # Отправляем только текстовое сообщение с кнопкой
+    await callback.message.answer(welcome_text, reply_markup=keyboard)
 
     logger.info(f"User {user_id} passed subscription check and started lottery")
