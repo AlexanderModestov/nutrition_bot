@@ -59,23 +59,23 @@ async def cmd_start(message: types.Message, supabase_client):
         logging.warning(f"User registration error: {e}")
 
     # Check if user already received the vitamin book
-    user = await supabase_client.get_user_by_telegram_id(message.from_user.id)
+    # user = await supabase_client.get_user_by_telegram_id(message.from_user.id)
 
-    # Only show vitamin book promo if user hasn't received it yet
-    if not user or not user.book_received:
-        # Send vitamin book promotional message with subscription button
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text=Messages.START_CMD["check_subscription_button"],
-                callback_data="check_channel_subscription"
-            )]
-        ])
+    # # Only show vitamin book promo if user hasn't received it yet
+    # if not user or not user.book_received:
+    #     # Send vitamin book promotional message with subscription button
+    #     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    #         [InlineKeyboardButton(
+    #             text=Messages.START_CMD["check_subscription_button"],
+    #             callback_data="check_channel_subscription"
+    #         )]
+    #     ])
 
-        await message.answer(
-            Messages.START_CMD["vitamin_book_promo"](),
-            reply_markup=keyboard,
-            disable_web_page_preview=True
-        )
+    #     await message.answer(
+    #         Messages.START_CMD["vitamin_book_promo"](),
+    #         reply_markup=keyboard,
+    #         disable_web_page_preview=True
+    #     )
 
 @content_router.message(Command('resources'))
 async def list_resources(message: types.Message):
