@@ -17,6 +17,7 @@ async def check_user_subscription(bot: Bot, user_id: int) -> bool:
     try:
         # Get channel username with @ prefix
         channel_username = f"@{Config.CHANNEL_USERNAME}"
+        logging.info(f"Checking subscription for user {user_id} in channel {channel_username}")
 
         # Check user's membership status in the channel
         member = await bot.get_chat_member(
@@ -36,7 +37,7 @@ async def check_user_subscription(bot: Bot, user_id: int) -> bool:
         return is_subscribed
 
     except Exception as e:
-        logging.error(f"Error checking subscription for user {user_id}: {e}")
+        logging.error(f"Error checking subscription for user {user_id} in channel @{Config.CHANNEL_USERNAME}: {e}", exc_info=True)
         # If there's an error (e.g., user not found, channel not accessible),
         # we assume user is not subscribed
         return False

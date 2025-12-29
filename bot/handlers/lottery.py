@@ -24,6 +24,7 @@ from urllib.parse import urlencode
 
 from bot.services.yookassa_service import YooKassaService
 from bot.config import Config
+from bot.utils.channel_checker import check_user_subscription
 
 
 # Configure logging
@@ -131,9 +132,8 @@ PRIZES = [
         id=1,
         image="prize_1.jpg",
         caption=(
-            "🎁 <b>Поздравляем!</b>\n\n"
-            "Вы выиграли возможность задать <b>3 вопроса по питанию</b> Анастасии Шарковой!\n\n"
-            "Получите персональные ответы на ваши наболевшие вопросы 💬"
+            "Задайте 3 своих самых наболевших вопроса по питанию, и я лично дам на них развёрнутые ответы.\n\n"
+            "➡️ Напишите мне «3 вопроса» в директ, чтобы активировать свой приз!"
         ),
         type=PrizeType.LINK,
         primary_btn=Button(text="✍️ Написать Анастасии", url="https://t.me/sharkova_na")
@@ -176,10 +176,9 @@ PRIZES = [
         id=4,
         image="prize_4.jpg",
         caption=(
-            "🎧 <b>Аудио-консультация всего за 990₽!</b>\n\n"
             "Полноценный разбор вашего запроса, но в формате удобного аудио. "
             "Слушайте в машине, на прогулке или за чаем — когда вам комфортно.\n\n"
-            "➡️ Кликайте «Записаться за 990₽», чтобы оплатить услугу."
+            "➡️ Кликайте «Записаться за 990₽», чтобы оплатить и получить анкету для аудио-консультации."
         ),
         type=PrizeType.PAYMENT_FLOW,
         price=Decimal("990"),
@@ -250,6 +249,15 @@ def get_start_keyboard():
     """Создает клавиатуру для стартового сообщения"""
     builder = InlineKeyboardBuilder()
     builder.button(text="🎰 Крутить колесо удачи", callback_data="start_lottery")
+    return builder.as_markup()
+
+
+def get_subscription_keyboard():
+    """Создает клавиатуру для проверки подписки на канал"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📢 Подписаться на канал", url=f"https://t.me/{Config.CHANNEL_USERNAME}")
+    builder.button(text="✅ Я подписался", callback_data="check_lottery_subscription")
+    builder.adjust(1)  # По одной кнопке в ряд
     return builder.as_markup()
 
 
@@ -410,8 +418,28 @@ async def show_lottery_start(message: Message):
     Args:
         message: Объект сообщения
     """
+    # Получаем bot из сообщения
+    bot = message.bot
+
     # Проверяем, является ли пользователь администратором
     is_admin = message.from_user.id in Config.get_admin_ids()
+
+    # Админы могут играть без проверки подписки
+    if not is_admin:
+        # Проверяем подписку на канал
+        is_subscribed = await check_user_subscription(bot, message.from_user.id)
+
+        if not is_subscribed:
+            # Пользователь не подписан - показываем сообщение с кнопкой подписки
+            subscription_message = (
+                "🎄 Чтобы участвовать в Новогодней Лотерее, необходимо подписаться на канал Анастасии!\n\n"
+                f"📢 Подпишитесь на канал @{Config.CHANNEL_USERNAME} и возвращайтесь за своим подарком! 🎁\n\n"
+                "После подписки нажмите кнопку «Я подписался» ниже."
+            )
+            keyboard = get_subscription_keyboard()
+            await message.answer(subscription_message, reply_markup=keyboard)
+            logger.info(f"User {message.from_user.id} needs to subscribe to channel before lottery")
+            return
 
     # Проверяем, участвовал ли пользователь ранее (админы могут участвовать неограниченно)
     if not is_admin and participants_manager.has_participated(message.from_user.id):
@@ -586,12 +614,38 @@ async def callback_start_lottery(callback: CallbackQuery, supabase_client):
         keyboard = get_prize_keyboard(prize, payment_data=payment_data)
 
         # Отправляем приз с кнопкой оплаты
-        await send_image_with_fallback(
+        sent_message = await send_image_with_fallback(
             message_or_query=callback,
             image_path=prize_image_path,
             caption=prize.caption,
             reply_markup=keyboard
         )
+
+        # Сохраняем message_id в базу данных для последующего удаления кнопки
+        if sent_message:
+            logger.info(f"Sent message has message_id: {sent_message.message_id}")
+            try:
+                # Получаем транзакцию по payment_id
+                transaction = await supabase_client.get_transaction_by_yookassa_id(payment_data['payment_id'])
+                logger.info(f"Retrieved transaction: {transaction.id if transaction else 'None'}")
+                if transaction:
+                    # Обновляем metadata транзакции, добавляя message_id
+                    updated_metadata = transaction.metadata or {}
+                    logger.info(f"Current metadata: {updated_metadata}")
+                    updated_metadata['prize_message_id'] = sent_message.message_id
+                    logger.info(f"Updated metadata: {updated_metadata}")
+
+                    await supabase_client.update_payment_transaction(
+                        transaction.id,
+                        {'metadata': updated_metadata}
+                    )
+                    logger.info(f"Saved message_id {sent_message.message_id} for payment {payment_data['payment_id']}")
+                else:
+                    logger.error(f"Transaction not found for payment_id: {payment_data['payment_id']}")
+            except Exception as e:
+                logger.error(f"Failed to save message_id: {e}", exc_info=True)
+        else:
+            logger.warning("No sent_message returned from send_image_with_fallback")
 
         logger.info(f"Payment prize sent (WebApp): user={callback.from_user.id}, prize={prize.id}, payment_id={payment_data['payment_id']}")
 
@@ -675,3 +729,77 @@ async def callback_prize_action(callback: CallbackQuery):
     # Здесь можно добавить специфичную логику для разных призов
     await callback.answer("✅ Действие выполнено!")
     logger.info(f"User {callback.from_user.id} triggered action for prize #{prize_id}")
+
+
+@lottery_router.callback_query(F.data == "check_lottery_subscription")
+async def callback_check_lottery_subscription(callback: CallbackQuery):
+    """Обработчик проверки подписки перед лотереей"""
+    bot = callback.bot
+    user_id = callback.from_user.id
+
+    # Проверяем, является ли пользователь администратором
+    is_admin = user_id in Config.get_admin_ids()
+
+    # Админы могут играть без проверки подписки
+    if not is_admin:
+        # Проверяем подписку на канал
+        is_subscribed = await check_user_subscription(bot, user_id)
+
+        if not is_subscribed:
+            # Пользователь все еще не подписан
+            await callback.answer(
+                f"❌ Вы еще не подписались на канал @{Config.CHANNEL_USERNAME}. "
+                "Пожалуйста, подпишитесь и попробуйте снова.",
+                show_alert=True
+            )
+            logger.info(f"User {user_id} still not subscribed to channel")
+            return
+
+    # Пользователь подписан - показываем стартовое меню лотереи
+    await callback.answer("✅ Отлично! Добро пожаловать в лотерею!")
+
+    # Удаляем сообщение о подписке
+    try:
+        await callback.message.delete()
+    except Exception as e:
+        logger.warning(f"Could not delete subscription message: {e}")
+
+    # Проверяем, участвовал ли пользователь ранее (админы могут участвовать неограниченно)
+    if not is_admin and participants_manager.has_participated(user_id):
+        logger.info(f"User {user_id} tried to participate again (already participated)")
+        await callback.message.answer(
+            "❌ Вы уже участвовали в Новогодней Лотерее!\n\n"
+            "Каждый пользователь может участвовать только один раз. 🎁\n\n"
+            "Надеемся, вам понравился ваш приз! 🎄"
+        )
+        return
+
+    # Показываем стартовое меню лотереи
+    start_image_path = os.path.join(CARDS_DIR, "start.jpg")
+
+    welcome_text = (
+        "Это беспроигрышная лотерея! Скорее нажимайте на кнопку \"Крутить колесо удачи\" "
+        "и узнайте, что вам выпадет.\n\n"
+        "Среди призов — мои полезные материалы и услуги для вашего здоровья и вкусного праздника. "
+        "До конца не буду раскрывать все карточки, но про парочку расскажу ;)\n\n"
+        "🧁 Рецепты\n"
+        "🎙️ Секретная консультация\n"
+        "📋 Полезные чек-листы\n"
+        "❓ Вопрос-ответ\n"
+        "🥗 Меню на пробу с учётом ваших пожеланий\n"
+        "🏆 Главный приз (приятная скидка на услугу)\n\n"
+        "Каждый приз — это физическая карточка с уникальным дизайном, которую вы получите после розыгрыша. "
+        "Она станет не только напоминанием о подарке, но и приятным новогодним сувениром!\n\n"
+        "Крутите колесо и забирайте свой подарок — без шанса проиграть! 🎄✨"
+    )
+
+    keyboard = get_start_keyboard()
+
+    await send_image_with_fallback(
+        message_or_query=callback.message,
+        image_path=start_image_path,
+        caption=welcome_text,
+        reply_markup=keyboard
+    )
+
+    logger.info(f"User {user_id} passed subscription check and started lottery")

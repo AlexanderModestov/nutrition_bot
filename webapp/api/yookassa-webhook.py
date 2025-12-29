@@ -80,7 +80,21 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             # Обновляем транзакцию в Supabase
-            self._update_transaction(payment_id, status, payment_method_type)
+            transaction = self._update_transaction(payment_id, status, payment_method_type)
+
+            # Удаляем кнопку оплаты из сообщения с призом
+            logger.info(f"Transaction received: {transaction}")
+            if transaction:
+                metadata = transaction.get('metadata', {})
+                logger.info(f"Transaction metadata: {metadata}")
+                prize_message_id = metadata.get('prize_message_id')
+                logger.info(f"Prize message_id: {prize_message_id}")
+                if prize_message_id:
+                    self._remove_payment_button(telegram_id, prize_message_id)
+                else:
+                    logger.warning("No prize_message_id in transaction metadata")
+            else:
+                logger.warning("No transaction returned from _update_transaction")
 
             # Отправляем уведомление пользователю
             self._send_user_notification(telegram_id, amount_value, currency, payment_id)
@@ -102,14 +116,14 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(b'Internal Server Error')
 
     def _update_transaction(self, payment_id, status, payment_method_type):
-        """Обновляет статус транзакции в Supabase"""
+        """Обновляет статус транзакции в Supabase и возвращает транзакцию"""
         try:
             supabase_url = os.getenv('SUPABASE_URL')
             supabase_key = os.getenv('SUPABASE_KEY')
 
             if not supabase_url or not supabase_key:
                 logger.warning("Supabase credentials not configured")
-                return
+                return None
 
             # Найти транзакцию по yookassa_payment_id
             url = f"{supabase_url}/rest/v1/payment_transactions?yookassa_payment_id=eq.{payment_id}"
@@ -125,9 +139,10 @@ class handler(BaseHTTPRequestHandler):
 
             if not transactions:
                 logger.warning(f"Transaction not found for payment_id: {payment_id}")
-                return
+                return None
 
-            transaction_id = transactions[0]['id']
+            transaction = transactions[0]
+            transaction_id = transaction['id']
 
             # Обновить статус
             update_url = f"{supabase_url}/rest/v1/payment_transactions?id=eq.{transaction_id}"
@@ -141,8 +156,11 @@ class handler(BaseHTTPRequestHandler):
             with request.urlopen(update_req) as response:
                 logger.info(f"Transaction {transaction_id} updated successfully")
 
+            return transaction
+
         except Exception as e:
             logger.error(f"Error updating transaction: {e}")
+            return None
 
     def _send_user_notification(self, telegram_id, amount, currency, payment_id):
         """Отправляет уведомление пользователю"""
@@ -216,6 +234,37 @@ class handler(BaseHTTPRequestHandler):
             result = json.loads(response.read().decode('utf-8'))
             if not result.get('ok'):
                 raise Exception(f"Telegram API error: {result}")
+
+    def _remove_payment_button(self, chat_id, message_id):
+        """Удаляет кнопку оплаты из сообщения с призом"""
+        try:
+            bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+            if not bot_token:
+                logger.error("TELEGRAM_BOT_TOKEN not configured")
+                return
+
+            url = f"https://api.telegram.org/bot{bot_token}/editMessageReplyMarkup"
+
+            data = json.dumps({
+                'chat_id': chat_id,
+                'message_id': int(message_id),
+                'reply_markup': {'inline_keyboard': []}  # Пустая клавиатура = удаление кнопок
+            }).encode('utf-8')
+
+            headers = {
+                'Content-Type': 'application/json'
+            }
+
+            req = request.Request(url, data=data, headers=headers, method='POST')
+            with request.urlopen(req) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                if result.get('ok'):
+                    logger.info(f"Payment button removed from message {message_id}")
+                else:
+                    logger.warning(f"Failed to remove button: {result}")
+
+        except Exception as e:
+            logger.error(f"Error removing payment button: {e}")
 
     def do_GET(self):
         """Health check endpoint"""
